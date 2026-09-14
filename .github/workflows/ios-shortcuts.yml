@@ -71,6 +71,14 @@ jobs:
               source.write_bytes(plistlib.dumps(workflow, sort_keys=False))
               print(f'{source.name}: {len(workflow["WFWorkflowActions"])} actions; validated')
           PY
+          cp shortcuts/ios/README.md dist/ios-shortcuts/
+      - name: Preserve complete unsigned source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cloud-Clipboard-iOS-Source
+          path: dist/ios-shortcuts/
+          if-no-files-found: error
+          retention-days: 30
       - name: Sign blank templates with HubSign
         shell: bash
         run: |
@@ -78,6 +86,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import json
+          import urllib.error
           import urllib.request
           for name in ('Cloud-Clipboard-Send', 'Cloud-Clipboard-Receive'):
               payload = json.dumps({
@@ -89,8 +98,12 @@ jobs:
                   data=payload,
                   headers={'Content-Type': 'application/json', 'User-Agent': 'cherri/2.3.0'},
               )
-              with urllib.request.urlopen(request, timeout=45) as response:
-                  data = response.read()
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      data = response.read()
+              except urllib.error.HTTPError as error:
+                  print(error.read().decode(errors='replace')[:2000], flush=True)
+                  raise
               assert data[:4] == b'AEA1', f'{name}: missing signed AEA container'
               signed = Path(f'dist/ios-shortcuts/{name}.shortcut')
               signed.write_bytes(data)

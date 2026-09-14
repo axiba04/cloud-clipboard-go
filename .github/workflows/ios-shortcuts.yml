@@ -93,7 +93,7 @@ jobs:
               request = urllib.request.Request(
                   'https://shortcuts.gluebyte.workers.dev/',
                   data=payload,
-                  headers={'Content-Type': 'application/x-gzip'},
+                  headers={'Content-Type': 'application/x-gzip', 'User-Agent': 'CloudClipboard-iOS-Shortcuts/1.0'},
               )
               try:
                   with urllib.request.urlopen(request, timeout=45) as response:

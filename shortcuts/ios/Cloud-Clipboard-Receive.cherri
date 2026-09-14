@@ -43,8 +43,10 @@ if @kind == "text" {
     setClipboard(@content, true)
     vibrate()
 } else {
-    @uuid = getValue(@record, "uuid")
-    @filename = getValue(@record, "name")
+    const uuidValue = getValue(@record, "uuid")
+    @uuid = getText(uuidValue)
+    const nameValue = getValue(@record, "name")
+    @filename = getText(nameValue)
     if !@uuid || !@filename {
         alert("服务器没有返回文件信息，请检查房间内是否已有内容。")
         stop()

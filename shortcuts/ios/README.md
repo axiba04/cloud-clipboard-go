@@ -40,7 +40,7 @@
 
 源码使用 [Cherri 2.3.0](https://github.com/electrikmilk/cherri/releases/tag/v2.3.0)。[工作流](../../.github/workflows/ios-shortcuts.yml) 在 GitHub Actions macOS 运行器编译，通过 Python 补全原生 multipart 文件附件字段（规避编译器对嵌套原始参数的序列化问题），检查 plist、导入配置与 HTTP 请求结构，再通过 [Shortcut Source Helper 的 Gluebyte Remote Sign](https://routinehub.co/shortcut/10060/) 签名。上传协议为 gzip 压缩的 plist，`Content-Type: application/x-gzip`，响应解压后为 AEA 签名文件。运行器使用 macOS 自带的 `aea` 和 `aa` 验证签名并解包核对动作；用户无需拥有 Mac。
 
-重新构建请使用完整工作流；单独编译发送指令的 `.cherri` 不会包含文件上传字段。artifact 中 `.plist` 是完整可审阅源文件。
+重新构建请使用完整工作流；它还会修复 Cherri 2.3.0 遗漏的导入问题动作索引，并将默认配置写入顶部文本动作。单独编译发送指令的 `.cherri` 不会包含文件上传字段。artifact 中 `.plist` 是完整可审阅源文件。
 
 Gluebyte 会收到完整的空配置快捷指令模板。真实地址和密码只在手机导入时填写；不要把配置后的指令提交到公开仓库。工作流不读取部署 Secrets，不触发 Cloudflare 部署。原 HubSign 接口在 2026-09-14 返回 502，因此改用 Gluebyte。
 

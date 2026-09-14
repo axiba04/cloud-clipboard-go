@@ -49,5 +49,5 @@ for name in ("Cloud-Clipboard-Send", "Cloud-Clipboard-Receive"):
             "is.workflow.actions.output", "is.workflow.actions.comment"
         ), "Unexpected action inserted by signing service"
     assert actual_actions[prefix_count:] == expected_actions, "Signing service changed shortcut actions"
-    print("Import questions:", received.get("WFWorkflowImportQuestions"), flush=True)
-    assert len(received.get("WFWorkflowImportQuestions", [])) == 3
+    assert received.get("WFWorkflowImportQuestions") == original["WFWorkflowImportQuestions"]
+    print("Import questions correctly target configuration actions 0, 2 and 4", flush=True)

@@ -42,6 +42,20 @@ jobs:
           for source in Path('dist/ios-shortcuts/source').glob('*.plist'):
               workflow = plistlib.loads(source.read_bytes())
               assert len(workflow['WFWorkflowImportQuestions']) == 3
+              # Cherri 2.3.0 emits these questions without their action indices.
+              # Bind each question to its actual configuration text action.
+              actions = workflow['WFWorkflowActions']
+              config_variables = {'https://example.com': 'endpoint', 'default': 'room', '': 'password'}
+              for question in workflow['WFWorkflowImportQuestions']:
+                  variable = config_variables[question['DefaultValue']]
+                  index = next(i - 1 for i, a in enumerate(actions)
+                               if a['WFWorkflowActionIdentifier'] == 'is.workflow.actions.setvariable'
+                               and a['WFWorkflowActionParameters']['WFVariableName'] == variable)
+                  assert index >= 0 and actions[index]['WFWorkflowActionIdentifier'] == 'is.workflow.actions.gettext'
+                  actions[index]['WFWorkflowActionParameters']['WFTextActionText'] = question['DefaultValue']
+                  question['ActionIndex'] = index
+              workflow['WFWorkflowImportQuestions'].sort(key=lambda q: q['ActionIndex'])
+              assert [q['ActionIndex'] for q in workflow['WFWorkflowImportQuestions']] == [0, 2, 4]
               requests = [a['WFWorkflowActionParameters'] for a in workflow['WFWorkflowActions']
                           if a['WFWorkflowActionIdentifier'] == 'is.workflow.actions.downloadurl']
               assert requests and all('Authorization' in str(r['WFHTTPHeaders']) for r in requests)

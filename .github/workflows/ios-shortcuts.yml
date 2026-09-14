@@ -48,7 +48,7 @@ jobs:
               if source.stem.endswith('Send'):
                   form = next(r for r in requests if r.get('WFHTTPBodyType') == 'Form')
                   field = form['WFFormValues']['Value']['WFDictionaryFieldValueItems'][0]
-                  assert field['WFItemType'] == 5
+                  assert field['WFItemType'] == 5, repr(field)
                   assert field['WFValue']['Value']['Value']['VariableName'] == 'fileToUpload'
                   raw = next(r for r in requests if r.get('WFHTTPBodyType') == 'File')
                   assert raw['WFRequestVariable']['WFSerializationType'] == 'WFTextTokenAttachment'

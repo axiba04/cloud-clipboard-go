@@ -38,7 +38,7 @@
 
 ## 构建和签名
 
-源码使用 [Cherri 2.3.0](https://github.com/electrikmilk/cherri/releases/tag/v2.3.0)。[工作流](../../.github/workflows/ios-shortcuts.yml) 在 GitHub Actions Linux 运行器编译，检查 plist、导入配置与 HTTP 请求结构，调用 [RoutineHub HubSign](https://cherrilang.org/getting-started.html) 完成签名，再验证签名文件的 AEA 容器头。
+源码使用 [Cherri 2.3.0](https://github.com/electrikmilk/cherri/releases/tag/v2.3.0)。[工作流](../../.github/workflows/ios-shortcuts.yml) 在 GitHub Actions Linux 运行器编译，通过 Python 补全原生 multipart 文件附件字段（规避编译器对嵌套原始参数的序列化问题），检查 plist、导入配置与 HTTP 请求结构，然后将同一份 plist 交给 [RoutineHub HubSign](https://cherrilang.org/getting-started.html) 完成签名，再验证签名文件的 AEA 容器头。重新构建请使用完整工作流；单独编译发送指令的 `.cherri` 不会包含文件上传字段。artifact 中 `.plist` 是完整可审阅源文件。
 
 HubSign 会收到完整的空配置快捷指令模板。真实地址和密码只在手机导入时填写；不要把配置后的指令提交到公开仓库。工作流不读取部署 Secrets，不触发 Cloudflare 部署。
 

@@ -20,26 +20,11 @@ action 'downloadurl' postText(text url: 'WFURL', variable body: 'WFRequestVariab
     "WFHTTPBodyType": "File"
 }
 
-// Native multipart file field. Keep the attachment as a file, not interpolated text.
+// The build workflow inserts the native multipart file attachment into this action.
+// Cherri 2.3.0 does not preserve this nested raw parameter structure reliably.
 action 'downloadurl' uploadFile(text url: 'WFURL', dictionary! headers: 'WFHTTPHeaders') {
     "WFHTTPMethod": "POST",
-    "WFHTTPBodyType": "Form",
-    "WFFormValues": {
-        "Value": {
-            "WFDictionaryFieldValueItems": [{
-                "WFKey": {"Value": {"string": "file"}, "WFSerializationType": "WFTextTokenString"},
-                "WFItemType": 5,
-                "WFValue": {
-                    "Value": {
-                        "Value": {"Type": "Variable", "VariableName": "fileToUpload"},
-                        "WFSerializationType": "WFTextTokenAttachment"
-                    },
-                    "WFSerializationType": "WFTokenAttachmentParameterState"
-                }
-            }]
-        },
-        "WFSerializationType": "WFDictionaryFieldValue"
-    }
+    "WFHTTPBodyType": "Form"
 }
 
 @endpoint = text(serverURL)

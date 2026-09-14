@@ -47,26 +47,53 @@ jobs:
               assert requests and all('Authorization' in str(r['WFHTTPHeaders']) for r in requests)
               if source.stem.endswith('Send'):
                   form = next(r for r in requests if r.get('WFHTTPBodyType') == 'Form')
+                  # Cherri's raw nested action parameters do not round-trip correctly.
+                  # Encode the native file field explicitly, then sign this exact plist.
+                  form['WFFormValues'] = {
+                      'WFSerializationType': 'WFDictionaryFieldValue',
+                      'Value': {'WFDictionaryFieldValueItems': [{
+                          'WFKey': {'WFSerializationType': 'WFTextTokenString', 'Value': {'string': 'file'}},
+                          'WFItemType': 5,
+                          'WFValue': {
+                              'WFSerializationType': 'WFTokenAttachmentParameterState',
+                              'Value': {
+                                  'WFSerializationType': 'WFTextTokenAttachment',
+                                  'Value': {'Type': 'Variable', 'VariableName': 'fileToUpload'},
+                              },
+                          },
+                      }]},
+                  }
                   field = form['WFFormValues']['Value']['WFDictionaryFieldValueItems'][0]
-                  assert field['WFItemType'] == 5, repr(field)
+                  assert field['WFItemType'] == 5
                   assert field['WFValue']['Value']['Value']['VariableName'] == 'fileToUpload'
                   raw = next(r for r in requests if r.get('WFHTTPBodyType') == 'File')
                   assert raw['WFRequestVariable']['WFSerializationType'] == 'WFTextTokenAttachment'
+              source.write_bytes(plistlib.dumps(workflow, sort_keys=False))
               print(f'{source.name}: {len(workflow["WFWorkflowActions"])} actions; validated')
           PY
       - name: Sign blank templates with HubSign
         shell: bash
         run: |
           set -euo pipefail
-          for name in Cloud-Clipboard-Send Cloud-Clipboard-Receive; do
-            "$RUNNER_TEMP/cherri/cherri" "shortcuts/ios/$name.cherri" --hubsign --no-ansi \
-              --output="dist/ios-shortcuts/$name.shortcut"
-          done
           python3 - <<'PY'
           from pathlib import Path
+          import json
+          import urllib.request
           for name in ('Cloud-Clipboard-Send', 'Cloud-Clipboard-Receive'):
+              payload = json.dumps({
+                  'shortcutName': name,
+                  'shortcut': Path(f'dist/ios-shortcuts/source/{name}.plist').read_text(),
+              }).encode()
+              request = urllib.request.Request(
+                  'https://hubsign.routinehub.services/sign',
+                  data=payload,
+                  headers={'Content-Type': 'application/json', 'User-Agent': 'cherri/2.3.0'},
+              )
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  data = response.read()
+              assert data[:4] == b'AEA1', f'{name}: missing signed AEA container'
               signed = Path(f'dist/ios-shortcuts/{name}.shortcut')
-              assert signed.read_bytes()[:4] == b'AEA1', f'{name}: missing signed AEA container'
+              signed.write_bytes(data)
               print(f'{name}: signed shortcut')
           PY
           cp shortcuts/ios/README.md dist/ios-shortcuts/

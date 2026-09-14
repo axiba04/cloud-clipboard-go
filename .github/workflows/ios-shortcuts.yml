@@ -1,0 +1,78 @@
+name: Build iOS Shortcuts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/ios-shortcuts]
+    paths:
+      - shortcuts/ios/**
+      - .github/workflows/ios-shortcuts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Cherri 2.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cherri" dist/ios-shortcuts/source
+          curl --fail --location --max-time 60 \
+            https://github.com/electrikmilk/cherri/releases/download/v2.3.0/cherri_linux-x86_64.zip \
+            --output "$RUNNER_TEMP/cherri.zip"
+          unzip -q "$RUNNER_TEMP/cherri.zip" -d "$RUNNER_TEMP/cherri"
+          chmod +x "$RUNNER_TEMP/cherri/cherri"
+      - name: Compile and validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in Cloud-Clipboard-Send Cloud-Clipboard-Receive; do
+            "$RUNNER_TEMP/cherri/cherri" "shortcuts/ios/$name.cherri" --skip-sign --no-ansi
+            cp "shortcuts/ios/${name}_unsigned.shortcut" "dist/ios-shortcuts/source/$name.plist"
+            cp "shortcuts/ios/$name.cherri" dist/ios-shortcuts/source/
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          for source in Path('dist/ios-shortcuts/source').glob('*.plist'):
+              workflow = plistlib.loads(source.read_bytes())
+              assert len(workflow['WFWorkflowImportQuestions']) == 3
+              requests = [a['WFWorkflowActionParameters'] for a in workflow['WFWorkflowActions']
+                          if a['WFWorkflowActionIdentifier'] == 'is.workflow.actions.downloadurl']
+              assert requests and all('Authorization' in str(r['WFHTTPHeaders']) for r in requests)
+              if source.stem.endswith('Send'):
+                  form = next(r for r in requests if r.get('WFHTTPBodyType') == 'Form')
+                  field = form['WFFormValues']['Value']['WFDictionaryFieldValueItems'][0]
+                  assert field['WFItemType'] == 5
+                  assert field['WFValue']['Value']['Value']['VariableName'] == 'fileToUpload'
+                  raw = next(r for r in requests if r.get('WFHTTPBodyType') == 'File')
+                  assert raw['WFRequestVariable']['WFSerializationType'] == 'WFTextTokenAttachment'
+              print(f'{source.name}: {len(workflow["WFWorkflowActions"])} actions; validated')
+          PY
+      - name: Sign blank templates with HubSign
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in Cloud-Clipboard-Send Cloud-Clipboard-Receive; do
+            "$RUNNER_TEMP/cherri/cherri" "shortcuts/ios/$name.cherri" --hubsign --no-ansi \
+              --output="dist/ios-shortcuts/$name.shortcut"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ('Cloud-Clipboard-Send', 'Cloud-Clipboard-Receive'):
+              signed = Path(f'dist/ios-shortcuts/{name}.shortcut')
+              assert signed.read_bytes()[:4] == b'AEA1', f'{name}: missing signed AEA container'
+              print(f'{name}: signed shortcut')
+          PY
+          cp shortcuts/ios/README.md dist/ios-shortcuts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cloud-Clipboard-iOS-Shortcuts
+          path: dist/ios-shortcuts/
+          if-no-files-found: error
+          retention-days: 30

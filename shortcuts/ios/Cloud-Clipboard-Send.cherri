@@ -57,7 +57,7 @@ if @endpoint == "https://example.com" || !@endpoint {
 @authorization = "Bearer {@password}"
 @source = ShortcutInput
 if !@source { @source = getClipboard() }
-@amount = count(@source, "Items")
+@amount = count(@source)
 if @amount != 1 {
     alert("请复制一条文字或一张图片后运行，或从分享菜单发送一个文件/一张照片。每次发送一项。")
     stop()

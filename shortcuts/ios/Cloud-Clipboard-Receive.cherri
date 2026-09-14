@@ -32,7 +32,8 @@ if @error {
     alert("获取失败：{@error}\n{@message}")
     stop()
 }
-@kind = getValue(@record, "type")
+const kindValue = getValue(@record, "type")
+@kind = getText(kindValue)
 if @kind == "text" {
     @content = getValue(@record, "content")
     if !@content {

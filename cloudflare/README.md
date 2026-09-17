@@ -117,6 +117,7 @@ ROOM_AUTH_JSON = "{\"finance\":{\"password\":\"finance-pass\",\"fileExpire\":0},
 
 | 问题现象 | 排查与解决办法 |
 | :--- | :--- |
+| **下载的文件只有几 KB，内容是网页首页** | 浏览器导航被静态资源的 SPA 回退接管。确保 [wrangler.toml.template](workers/wrangler.toml.template) 的 `compatibility_flags` 包含 `assets_navigation_has_no_effect`，然后重新部署。验收须实际点击浏览器下载按钮并比对文件；用 HTTP 工具模拟时需确认实际发出了 `Sec-Fetch-Mode: navigate`，Node `fetch` 会将此头改为 `cors`，无法覆盖此问题。 |
 | **部署提示 `wrangler whoami` 未登录** | 本地运行 `wrangler login`；CI 部署请检查 `CF_API_TOKEN` 和 `CF_ACCOUNT_ID` 是否正确填写。 |
 | **修改了 `wrangler.toml` 后自动丢失** | `wrangler.toml` 是由脚本自动生成的临时文件。请修改模板文件 [wrangler.toml.template](cloudflare/workers/wrangler.toml.template)。 |
 | **页面打开正常，但发消息或上传报错** | 1. 检查 D1 schema 是否已执行迁移；<br>2. 检查 `ROOM_AUTH_JSON` 是否为合法 JSON（避免多余反斜杠或格式错误）；<br>3. 检查 Cloudflare 控制台 Worker 是否成功绑定 D1(`DB`)、R2(`R2_BUCKET`)、Durable Object(`WEBSOCKET_ROOM`)。 |

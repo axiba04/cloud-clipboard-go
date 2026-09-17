@@ -1,11 +1,12 @@
 name = "cloud-clipboard-worker"
 main = "src/index.js"
 compatibility_date = "2025-08-01"
-compatibility_flags = ["nodejs_compat"]
+# 浏览器导航到下载接口时也进入 Worker，不能被 SPA 首页回退接管。
+compatibility_flags = ["nodejs_compat", "assets_navigation_has_no_effect"]
 
 # 托管 Vue3 前端静态资源（web-vue3/dist 的拷贝）
-# 静态资源与 SPA 导航请求免费且不限量；
-# 非导航的 API 请求（/server、/text、/upload、/push 等，由前端 XHR/fetch 发起）才会调用 Worker。
+# 静态资源与 SPA 页面导航由静态资源服务处理；
+# 文件下载和内容分享即使由浏览器导航发起，也必须进入 Worker，避免返回 index.html。
 [assets]
 directory = "./assets"
 not_found_handling = "single-page-application"

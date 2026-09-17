@@ -1,0 +1,71 @@
+#define name Cloud-Clipboard-Receive
+#define color green
+
+#include 'actions/web'
+#include 'actions/text'
+#include 'actions/images'
+#include 'actions/sharing'
+#include 'actions/device'
+
+#question serverURL "Cloudflare 部署地址，例如 https://clip.example.com，不要附带房间路径" "https://example.com"
+#question roomName "房间名，必须与网页一致；默认房间填 default" "default"
+#question roomPassword "全局访问密码或此房间密码；未设密码则留空（不是 Cloudflare API Token）" ""
+
+@endpoint = text(serverURL)
+@room = text(roomName)
+@password = text(roomPassword)
+@endpoint = trimWhitespace(@endpoint)
+@endpoint = replaceText('/+$', "", @endpoint, true, true)
+@room = trimWhitespace(@room)
+if !@room { @room = "default" }
+if @endpoint == "https://example.com" || !@endpoint {
+    alert("请先编辑快捷指令顶部的部署地址、房间名和密码。")
+    stop()
+}
+@encodedRoom = urlEncode(@room)
+@authorization = "Bearer {@password}"
+@response = downloadURL("{@endpoint}/content/latest?room={@encodedRoom}&json=1", {"Authorization":"{@authorization}", "Accept":"application/json", "Cache-Control":"no-cache"})
+@record = getDictionary(@response)
+@error = getValue(@record, "error")
+if @error {
+    @message = getValue(@record, "message")
+    alert("获取失败：{@error}\n{@message}")
+    stop()
+}
+const kindValue = getValue(@record, "type")
+@kind = getText(kindValue)
+if @kind == "text" {
+    @content = getValue(@record, "content")
+    if !@content {
+        alert("服务器没有返回文字内容。")
+        stop()
+    }
+    setClipboard(@content, true)
+    vibrate()
+} else {
+    const uuidValue = getValue(@record, "uuid")
+    @uuid = getText(uuidValue)
+    const nameValue = getValue(@record, "name")
+    @filename = getText(nameValue)
+    if !@uuid || !@filename {
+        alert("服务器没有返回文件信息，请检查房间内是否已有内容。")
+        stop()
+    }
+    @encodedUUID = urlEncode(@uuid)
+    @encodedName = urlEncode(@filename)
+    // Pin the download to the returned UUID so a concurrent upload cannot change it.
+    @download = downloadURL("{@endpoint}/file/{@encodedUUID}/{@encodedName}?room={@encodedRoom}", {"Authorization":"{@authorization}", "Cache-Control":"no-cache"})
+    if @kind == "image" {
+        @images = getImages(@download)
+        @picture = getFirstItem(@images)
+        if !@picture {
+            alert("无法读取图片，文件可能已过期或被删除。")
+            stop()
+        }
+        setClipboard(@picture, true)
+        vibrate()
+    } else {
+        @file = setName(@download, @filename)
+        share(@file)
+    }
+}

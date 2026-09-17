@@ -1,0 +1,85 @@
+#define name Cloud-Clipboard-Send
+#define inputs file, image, text, url, pdf
+#define from sharesheet
+#define noinput getclipboard
+#define color blue
+
+#include 'actions/web'
+#include 'actions/text'
+#include 'actions/images'
+#include 'actions/sharing'
+#include 'actions/device'
+
+#question serverURL "Cloudflare 部署地址，例如 https://clip.example.com，不要附带房间路径" "https://example.com"
+#question roomName "房间名，必须与网页一致；默认房间填 default" "default"
+#question roomPassword "全局访问密码或此房间密码；未设密码则留空（不是 Cloudflare API Token）" ""
+
+// /text expects raw UTF-8, not JSON or a form field.
+action 'downloadurl' postText(text url: 'WFURL', variable body: 'WFRequestVariable', dictionary! headers: 'WFHTTPHeaders') {
+    "WFHTTPMethod": "POST",
+    "WFHTTPBodyType": "File"
+}
+
+// The build workflow inserts the native multipart file attachment into this action.
+// Cherri 2.3.0 does not preserve this nested raw parameter structure reliably.
+action 'downloadurl' uploadFile(text url: 'WFURL', dictionary! headers: 'WFHTTPHeaders') {
+    "WFHTTPMethod": "POST",
+    "WFHTTPBodyType": "Form"
+}
+
+@endpoint = text(serverURL)
+@room = text(roomName)
+@password = text(roomPassword)
+@endpoint = trimWhitespace(@endpoint)
+@endpoint = replaceText('/+$', "", @endpoint, true, true)
+@room = trimWhitespace(@room)
+if !@room { @room = "default" }
+if @endpoint == "https://example.com" || !@endpoint {
+    alert("请先编辑快捷指令顶部的部署地址、房间名和密码。")
+    stop()
+}
+@encodedRoom = urlEncode(@room)
+@authorization = "Bearer {@password}"
+@source = ShortcutInput
+if !@source { @source = getClipboard() }
+@amount = count(@source)
+if @amount != 1 {
+    alert("请复制一条文字或一张图片后运行，或从分享菜单发送一个文件/一张照片。每次发送一项。")
+    stop()
+}
+@item = getFirstItem(@source)
+@kind = typeOf(@item)
+@kind = lowercase(@kind)
+
+if @kind == "text" || @kind == "rich text" || @kind == "url" || @kind == "文本" || @kind == "多信息文本" || @kind == "富文本" || @kind == "文字" || @kind == "网址" || @kind == "網址" {
+    @body = getText(@item)
+    const nonempty = trimWhitespace(@body)
+    if !nonempty {
+        alert("文字为空，没有发送。")
+        stop()
+    }
+    @response = postText("{@endpoint}/text?room={@encodedRoom}&client=ios-shortcuts", @body, {"Authorization":"{@authorization}", "Content-Type":"text/plain; charset=utf-8"})
+} else {
+    if @kind == "image" || @kind == "photo media" || @kind == "图像" || @kind == "影像" || @kind == "图片" || @kind == "照片媒体" || @kind == "照片媒體" {
+        @images = getImages(@item)
+        @image = getFirstItem(@images)
+        @picture = convertImage(@image, "PNG")
+        @fileToUpload = setName(@picture, "clipboard.png")
+    } else {
+        @fileToUpload = @item
+    }
+    @response = uploadFile("{@endpoint}/upload?room={@encodedRoom}&client=ios-shortcuts", {"Authorization":"{@authorization}"})
+}
+@record = getDictionary(@response)
+@error = getValue(@record, "error")
+if @error {
+    @message = getValue(@record, "message")
+    alert("发送失败：{@error}\n{@message}")
+    stop()
+}
+@savedID = getValue(@record, "id")
+if !@savedID {
+    alert("服务器未确认保存，请检查部署地址及服务器状态。")
+    stop()
+}
+vibrate()

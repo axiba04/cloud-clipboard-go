@@ -1,0 +1,133 @@
+name: Build iOS Shortcuts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/ios-shortcuts]
+    paths:
+      - shortcuts/ios/**
+      - .github/workflows/ios-shortcuts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: macos-15-intel
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Cherri 2.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cherri" dist/ios-shortcuts/source
+          curl --fail --location --max-time 60 \
+            https://github.com/electrikmilk/cherri/releases/download/v2.3.0/cherri_darwin-x86_64.zip \
+            --output "$RUNNER_TEMP/cherri.zip"
+          unzip -q "$RUNNER_TEMP/cherri.zip" -d "$RUNNER_TEMP/cherri"
+          chmod +x "$RUNNER_TEMP/cherri/cherri"
+      - name: Compile and validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in Cloud-Clipboard-Send Cloud-Clipboard-Receive; do
+            "$RUNNER_TEMP/cherri/cherri" "shortcuts/ios/$name.cherri" --skip-sign --no-ansi
+            cp "shortcuts/ios/${name}_unsigned.shortcut" "dist/ios-shortcuts/source/$name.plist"
+            cp "shortcuts/ios/$name.cherri" dist/ios-shortcuts/source/
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          for source in Path('dist/ios-shortcuts/source').glob('*.plist'):
+              workflow = plistlib.loads(source.read_bytes())
+              assert len(workflow['WFWorkflowImportQuestions']) == 3
+              # Cherri 2.3.0 emits these questions without their action indices.
+              # Bind each question to its actual configuration text action.
+              actions = workflow['WFWorkflowActions']
+              config_variables = {'https://example.com': 'endpoint', 'default': 'room', '': 'password'}
+              for question in workflow['WFWorkflowImportQuestions']:
+                  variable = config_variables[question['DefaultValue']]
+                  index = next(i - 1 for i, a in enumerate(actions)
+                               if a['WFWorkflowActionIdentifier'] == 'is.workflow.actions.setvariable'
+                               and a['WFWorkflowActionParameters']['WFVariableName'] == variable)
+                  assert index >= 0 and actions[index]['WFWorkflowActionIdentifier'] == 'is.workflow.actions.gettext'
+                  actions[index]['WFWorkflowActionParameters']['WFTextActionText'] = question['DefaultValue']
+                  question['ActionIndex'] = index
+              workflow['WFWorkflowImportQuestions'].sort(key=lambda q: q['ActionIndex'])
+              assert [q['ActionIndex'] for q in workflow['WFWorkflowImportQuestions']] == [0, 2, 4]
+              requests = [a['WFWorkflowActionParameters'] for a in workflow['WFWorkflowActions']
+                          if a['WFWorkflowActionIdentifier'] == 'is.workflow.actions.downloadurl']
+              assert requests and all('Authorization' in str(r['WFHTTPHeaders']) for r in requests)
+              if source.stem.endswith('Send'):
+                  form = next(r for r in requests if r.get('WFHTTPBodyType') == 'Form')
+                  # Cherri's raw nested action parameters do not round-trip correctly.
+                  # Encode the native file field explicitly, then sign this exact plist.
+                  form['WFFormValues'] = {
+                      'WFSerializationType': 'WFDictionaryFieldValue',
+                      'Value': {'WFDictionaryFieldValueItems': [{
+                          'WFKey': {'WFSerializationType': 'WFTextTokenString', 'Value': {'string': 'file'}},
+                          'WFItemType': 5,
+                          'WFValue': {
+                              'WFSerializationType': 'WFTokenAttachmentParameterState',
+                              'Value': {
+                                  'WFSerializationType': 'WFTextTokenAttachment',
+                                  'Value': {'Type': 'Variable', 'VariableName': 'fileToUpload'},
+                              },
+                          },
+                      }]},
+                  }
+                  field = form['WFFormValues']['Value']['WFDictionaryFieldValueItems'][0]
+                  assert field['WFItemType'] == 5
+                  assert field['WFValue']['Value']['Value']['VariableName'] == 'fileToUpload'
+                  raw = next(r for r in requests if r.get('WFHTTPBodyType') == 'File')
+                  assert raw['WFRequestVariable']['WFSerializationType'] == 'WFTextTokenAttachment'
+              source.write_bytes(plistlib.dumps(workflow, sort_keys=False))
+              print(f'{source.name}: {len(workflow["WFWorkflowActions"])} actions; validated')
+          PY
+          cp shortcuts/ios/README.md dist/ios-shortcuts/
+      - name: Preserve complete unsigned source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cloud-Clipboard-iOS-Source
+          path: dist/ios-shortcuts/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Sign blank templates with Gluebyte Remote Sign
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import gzip
+          import urllib.error
+          import urllib.request
+          for name in ('Cloud-Clipboard-Send', 'Cloud-Clipboard-Receive'):
+              payload = gzip.compress(Path(f'dist/ios-shortcuts/source/{name}.plist').read_bytes())
+              request = urllib.request.Request(
+                  'https://shortcuts.gluebyte.workers.dev/',
+                  data=payload,
+                  headers={'Content-Type': 'application/x-gzip', 'User-Agent': 'CloudClipboard-iOS-Shortcuts/1.0'},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      data = response.read()
+              except urllib.error.HTTPError as error:
+                  print(error.read().decode(errors='replace')[:2000], flush=True)
+                  raise
+              if data[:2] != b'\x1f\x8b':
+                  raise RuntimeError(data.decode(errors='replace')[:2000])
+              data = gzip.decompress(data)
+              assert data[:4] == b'AEA1', f'{name}: missing signed AEA container'
+              signed = Path(f'dist/ios-shortcuts/{name}.shortcut')
+              signed.write_bytes(data)
+              print(f'{name}: signed shortcut')
+          PY
+          python3 shortcuts/ios/verify-signed.py dist/ios-shortcuts
+          cp shortcuts/ios/README.md dist/ios-shortcuts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cloud-Clipboard-iOS-Shortcuts
+          path: dist/ios-shortcuts/
+          if-no-files-found: error
+          retention-days: 30
